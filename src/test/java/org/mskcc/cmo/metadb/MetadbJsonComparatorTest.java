@@ -86,6 +86,7 @@ public class MetadbJsonComparatorTest {
                             "Request did not pass consistency check but no exception was caught.");
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 errorsMap.put(incomingRequestId, e.getMessage());
             }
         }
