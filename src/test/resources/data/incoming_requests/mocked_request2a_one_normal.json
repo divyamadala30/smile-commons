@@ -71,10 +71,10 @@
       "sampleOrigin": "Buffy Coat",
       "tissueLocation": "Blood",
       "baitSet": "GENESET101_BAITS",
-      "recipe": "GENESET101_BAITS",
       "cmoSampleIdFields": {
         "naToExtract": "",
-        "normalizedPatientId": "MRN_REDACTED"
+        "normalizedPatientId": "MRN_REDACTED",
+        "recipe": "GENESET101_BAITS"
       }
     }
   ],
