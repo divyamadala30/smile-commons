@@ -41,23 +41,25 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         "sampleAliases",
         "genePanel"};
 
-    Map<String, String> setUpResearchRequestMapping() {
-        Map<String, String> researchRequestMapping = new HashMap<>();
-        researchRequestMapping.put("projectId", "igoProjectId");
-        researchRequestMapping.put("requestId", "igoRequestId");
-        researchRequestMapping.put("recipe", "genePanel");
-        return researchRequestMapping;
+    private final Map<String, String> STD_IGO_REQUEST_JSON_PROPS_MAP = initStandardizedIgoRequestJsonPropsMap();
+    private final Map<String, String> STD_IGO_SAMPLE_JSON_PROPS_MAP = initStandardizedIgoSampleJsonPropsMap();
+
+    private Map<String, String> initStandardizedIgoRequestJsonPropsMap() {
+        Map<String, String> map = new HashMap<>();
+        map.put("projectId", "igoProjectId");
+        map.put("requestId", "igoRequestId");
+        map.put("recipe", "genePanel");
+        return map;
     }
 
-    Map<String, String> setUpResearchSampleMapping() {
-        Map<String, String> researchSampleMapping = new HashMap<>();
-        researchSampleMapping.put("cmoSampleClass", "sampleType");
-        researchSampleMapping.put("specimenType", "sampleClass");
-        researchSampleMapping.put("oncoTreeCode", "oncotreeCode");
-        researchSampleMapping.put("requestId", "igoRequestId");
-        //researchSampleMapping.put("recipe", "genePanel");
-        researchSampleMapping.put("igoId", "primaryId");
-        return researchSampleMapping;
+    private Map<String, String> initStandardizedIgoSampleJsonPropsMap() {
+        Map<String, String> map = new HashMap<>();
+        map.put("cmoSampleClass", "sampleType");
+        map.put("specimenType", "sampleClass");
+        map.put("oncoTreeCode", "oncotreeCode");
+        map.put("requestId", "igoRequestId");
+        map.put("igoId", "primaryId");
+        return map;
     }
 
     @Override
@@ -71,8 +73,8 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         Boolean consistencyCheckStatus = Boolean.TRUE;
 
         // filter reference and target request jsons and compare
-        String filteredReferenceJson = getFilteredJsonString(referenceJson, ignoredFields);
-        String filteredTargetJson = getFilteredJsonString(targetJson, ignoredFields);
+        String filteredReferenceJson = standardizeAndFilterRequestJson(referenceJson, ignoredFields);
+        String filteredTargetJson = standardizeAndFilterRequestJson(targetJson, ignoredFields);
         if (!isMatchingJsons(filteredReferenceJson, filteredTargetJson)) {
             consistencyCheckStatus = Boolean.FALSE;
         }
@@ -80,9 +82,9 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         // filter reference and target sample list jsons and compare if applicable
         if (jsonHasSamplesField(referenceJson) || jsonHasSamplesField(targetJson)) {
             String filteredReferenceSamplesJson =
-                    getFilteredRequestSamplesJsonString(referenceJson, ignoredFields);
+                    standardizeAndFilterRequestSamplesJson(referenceJson, ignoredFields);
             String filteredTargetSamplesJson =
-                    getFilteredRequestSamplesJsonString(targetJson, ignoredFields);
+                    standardizeAndFilterRequestSamplesJson(targetJson, ignoredFields);
             if (!isMatchingJsons(filteredReferenceSamplesJson, filteredTargetSamplesJson)) {
                 consistencyCheckStatus = Boolean.FALSE;
             }
@@ -90,44 +92,61 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         return consistencyCheckStatus;
     }
 
-    private String getFilteredJsonString(String jsonString, String[] ignoredFields)
+    /**
+     * Given an input jsonString and an array of ignoredFields, returns a JSON
+     * with (1) the fields to ignore removed, (2) json fields with null or empty values
+     * removed, and (3) standardize json property names.
+     * @param jsonString
+     * @param ignoredFields
+     * @return String
+     * @throws JsonProcessingException
+     */
+    private String standardizeAndFilterRequestJson(String jsonString, String[] ignoredFields)
             throws JsonProcessingException {
         JsonNode unfilteredJsonNode = mapper.readTree(jsonString);
-        JsonNode transformedJsonNode = transformFilterNode(
-                (ObjectNode) unfilteredJsonNode, setUpResearchRequestMapping());
-        JsonNode transformedAndfilteredJsonNode = filterJsonNode(
-                (ObjectNode) transformedJsonNode, ignoredFields);
-
-
-        return mapper.writeValueAsString(transformedAndfilteredJsonNode);
+        JsonNode stdJsonNode = standardizeJsonProperties(
+                (ObjectNode) unfilteredJsonNode, STD_IGO_REQUEST_JSON_PROPS_MAP);
+        JsonNode stdFilteredJsonNode = filterJsonNode((ObjectNode) stdJsonNode, ignoredFields);
+        return mapper.writeValueAsString(stdFilteredJsonNode);
     }
 
-    private String getFilteredRequestSamplesJsonString(String jsonString, String[] ignoredFields)
+    /**
+     * Given an input jsonString and an array of ignoredFields, returns a JSON
+     * with (1) the fields to ignore removed, (2) json fields with null or empty values
+     * removed, and (3) standardize json property names.
+     * @param jsonString
+     * @param ignoredFields
+     * @return String
+     * @throws JsonProcessingException
+     */
+    private String standardizeAndFilterRequestSamplesJson(String jsonString, String[] ignoredFields)
             throws JsonProcessingException {
-        JsonNode unfilteredJsonNode = mapper.readTree(jsonString);
-        if (!unfilteredJsonNode.has("samples")) {
+        if (!jsonHasSamplesField(jsonString)) {
             return null;
         }
+        JsonNode unfilteredJsonNode = mapper.readTree(jsonString);
         Map<String, JsonNode> unorderedSamplesMap = new HashMap<>();
 
+        // iterate through array of sample json nodes and (1) standardize the json
+        // props and (2) filter and remove null/empty values
         ArrayNode samplesArrayNode = (ArrayNode) unfilteredJsonNode.get("samples");
         Iterator<JsonNode> itr = samplesArrayNode.elements();
         while (itr.hasNext()) {
-            JsonNode transformedSampleNode = transformFilterNode(
-                    (ObjectNode) itr.next(), setUpResearchSampleMapping());
-            JsonNode transformedAndFilteredSampleNode = filterJsonNode(
-                    (ObjectNode) transformedSampleNode, ignoredFields);
+            JsonNode stdSampleNode = standardizeJsonProperties(
+                    (ObjectNode) itr.next(), STD_IGO_SAMPLE_JSON_PROPS_MAP);
+            JsonNode stdFilteredSampleNode = filterJsonNode((ObjectNode) stdSampleNode, ignoredFields);
 
-            String sid = transformedAndFilteredSampleNode.get("primaryId").toString();
-            unorderedSamplesMap.put(sid, transformedAndFilteredSampleNode);
+            String sid = stdFilteredSampleNode.get("primaryId").toString();
+            unorderedSamplesMap.put(sid, stdFilteredSampleNode);
         }
-
+        // order array of sample nodes by their primary id
         LinkedHashMap<String, JsonNode> orderedSamplesMap = new LinkedHashMap<>();
         unorderedSamplesMap.entrySet()
             .stream()
             .sorted(Map.Entry.comparingByKey())
             .forEachOrdered(x -> orderedSamplesMap.put(x.getKey(), x.getValue()));
 
+        // create ordered array of request sample json nodes and return as string
         ArrayNode sortedRequestSamplesArrayNode = mapper.createArrayNode();
         orderedSamplesMap.entrySet().forEach((entry) -> {
             sortedRequestSamplesArrayNode.add(entry.getValue());
@@ -135,11 +154,24 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         return mapper.writeValueAsString(sortedRequestSamplesArrayNode);
     }
 
+    /**
+     * Helper function to return a Boolean based on presence of 'samples' field in
+     * the input JSON.
+     * @param jsonString
+     * @return Boolean
+     * @throws JsonProcessingException
+     */
     private Boolean jsonHasSamplesField(String jsonString) throws JsonProcessingException {
         JsonNode jsonNode = mapper.readTree(jsonString);
         return jsonNode.has("samples");
     }
 
+    /**
+     * Returns Boolean based on results of JSONAssert.
+     * @param referenceJson
+     * @param targetJson
+     * @return
+     */
     private Boolean isMatchingJsons(String referenceJson, String targetJson) {
         if (referenceJson == null ? targetJson == null : referenceJson.equals(targetJson)) {
             return Boolean.TRUE;
@@ -153,6 +185,13 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         return Boolean.TRUE;
     }
 
+    /**
+     * Returns a JsonNode with the given json properties matching 'ignoredFields'
+     * removed from the node as well as any properties with null or empty values.
+     * @param node
+     * @param ignoredFields
+     * @return JsonNode
+     */
     private JsonNode filterJsonNode(ObjectNode node, String[] ignoredFields) {
         List<String> fieldsToRemove = new ArrayList<>();
         // if ignored fields is not null then add to list of fields to remove
@@ -181,27 +220,30 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         return node;
     }
 
-    private JsonNode replaceNodeFieldNameWithMappedField(ObjectNode node,
-            String fieldName, String mappedName) {
-        String fieldValue = node.get(fieldName).asText();
-        node.put(mappedName, fieldValue);
-        node.remove(fieldName);
-        return node;
-    }
-
-    private JsonNode transformFilterNode(ObjectNode node, Map<String, String> mappedFields) {
-        Map<String, String> foundMappedFields = new HashMap<>();
-
+    /**
+     * Returns a JsonNode with standardized properties based on the provided jsonPropsMap.
+     * @param node
+     * @param jsonPropsMap
+     * @return JsonNode
+     */
+    private JsonNode standardizeJsonProperties(ObjectNode node, Map<String, String> jsonPropsMap) {
         // append list of fields that need to be updated
+        List<String> fieldsToUpdate = new ArrayList<>();
+
         Iterator<String> itr = node.fieldNames();
         while (itr.hasNext()) {
             String field = itr.next();
-            if (mappedFields.containsKey(field)) {
-                foundMappedFields.put(field, mappedFields.get(field));
+            if (jsonPropsMap.containsKey(field)) {
+                fieldsToUpdate.add(field);
             }
         }
-        for (Map.Entry<String, String> entry: foundMappedFields.entrySet()) {
-            node = (ObjectNode) replaceNodeFieldNameWithMappedField(node, entry.getKey(), entry.getValue());
+        // updating and removal needs to be done separately from iteration above
+        // to avoid a java.util.ConcurrentModificationException
+        for (String field : fieldsToUpdate) {
+            String value = node.get(field).asText();
+            String stdJsonProp = jsonPropsMap.get(field);
+            node.put(stdJsonProp, value);
+            node.remove(field);
         }
         return node;
     }
