@@ -38,7 +38,8 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         "sampleAliases",
         "datasource",
         "patientAliases",
-        "sampleAliases"};
+        "sampleAliases",
+        "genePanel"};
 
     Map<String, String> setUpResearchRequestMapping() {
         Map<String, String> researchRequestMapping = new HashMap<>();
@@ -54,7 +55,7 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         researchSampleMapping.put("specimenType", "sampleClass");
         researchSampleMapping.put("oncoTreeCode", "oncotreeCode");
         researchSampleMapping.put("requestId", "igoRequestId");
-        researchSampleMapping.put("recipe", "genePanel");
+        //researchSampleMapping.put("recipe", "genePanel");
         researchSampleMapping.put("igoId", "primaryId");
         return researchSampleMapping;
     }
@@ -92,9 +93,11 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
     private String getFilteredJsonString(String jsonString, String[] ignoredFields)
             throws JsonProcessingException {
         JsonNode unfilteredJsonNode = mapper.readTree(jsonString);
-        JsonNode filteredJsonNode = filterJsonNode((ObjectNode) unfilteredJsonNode, ignoredFields);
-        JsonNode transformedAndfilteredJsonNode = transformFilterNode(
-                (ObjectNode) filteredJsonNode, setUpResearchRequestMapping());
+        JsonNode transformedJsonNode = transformFilterNode(
+                (ObjectNode) unfilteredJsonNode, setUpResearchRequestMapping());
+        JsonNode transformedAndfilteredJsonNode = filterJsonNode(
+                (ObjectNode) transformedJsonNode, ignoredFields);
+
 
         return mapper.writeValueAsString(transformedAndfilteredJsonNode);
     }
@@ -110,11 +113,13 @@ public class MetadbJsonComparatorImpl implements MetadbJsonComparator {
         ArrayNode samplesArrayNode = (ArrayNode) unfilteredJsonNode.get("samples");
         Iterator<JsonNode> itr = samplesArrayNode.elements();
         while (itr.hasNext()) {
-            JsonNode filteredSampleNode = filterJsonNode((ObjectNode) itr.next(), ignoredFields);
-            JsonNode transformedAnsFilteredSampleNode = transformFilterNode(
-                    (ObjectNode) filteredSampleNode, setUpResearchSampleMapping());
-            String sid = transformedAnsFilteredSampleNode.get("primaryId").toString();
-            unorderedSamplesMap.put(sid, transformedAnsFilteredSampleNode);
+            JsonNode transformedSampleNode = transformFilterNode(
+                    (ObjectNode) itr.next(), setUpResearchSampleMapping());
+            JsonNode transformedAndFilteredSampleNode = filterJsonNode(
+                    (ObjectNode) transformedSampleNode, ignoredFields);
+
+            String sid = transformedAndFilteredSampleNode.get("primaryId").toString();
+            unorderedSamplesMap.put(sid, transformedAndFilteredSampleNode);
         }
 
         LinkedHashMap<String, JsonNode> orderedSamplesMap = new LinkedHashMap<>();
