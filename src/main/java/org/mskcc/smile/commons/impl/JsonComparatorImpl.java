@@ -1,6 +1,7 @@
 package org.mskcc.smile.commons.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -91,8 +92,52 @@ public class JsonComparatorImpl implements JsonComparator {
             if (!isMatchingJsons(filteredReferenceSamplesJson, filteredTargetSamplesJson)) {
                 consistencyCheckStatus = Boolean.FALSE;
             }
+
+            JsonNode refSamplesJsonNode = mapper.readTree(referenceJson).get("samples");
+            ArrayNode refSamplesArrayNode = (ArrayNode) refSamplesJsonNode;
+            Iterator<JsonNode> itrRef = refSamplesArrayNode.elements();
+
+            // Iterating through a list of samples from referenceJson
+            while (itrRef.hasNext()) {
+                JsonNode refSampleNode = itrRef.next();
+                if (refSampleNode.has("primaryId")) {
+                    JsonNode tarSampleNode = findSampleNodeFromSampleArray(targetJson,
+                            refSampleNode.get("primaryId").toString());
+                    // Compares libraries, runs and qcReports.
+                    if (!isMatchingJsonByFieldName(refSampleNode, tarSampleNode, "qcReports")
+                            || !isMatchingJsonByFieldName(refSampleNode, tarSampleNode, "libraries")
+                            || !isMatchingJsonByFieldName(refSampleNode.get("libraries"),
+                                    tarSampleNode.get("libraries"), "runs")) {
+                        consistencyCheckStatus = Boolean.FALSE;
+                    }
+                }
+            }
         }
         return consistencyCheckStatus;
+    }
+
+    private JsonNode findSampleNodeFromSampleArray(String targetJson, String primaryId)
+            throws JsonMappingException, JsonProcessingException {
+        JsonNode tarSamplesJsonNode = mapper.readTree(targetJson).get("samples");
+        ArrayNode tarSamplesArrayNode = (ArrayNode) tarSamplesJsonNode;
+        Iterator<JsonNode> itrTar = tarSamplesArrayNode.elements();
+
+        while (itrTar.hasNext()) {
+            JsonNode sampleNode = itrTar.next();
+            if (primaryId.equals(sampleNode.get("primaryId").toString())) {
+                return sampleNode;
+            }
+        }
+        return null;
+    }
+
+    private Boolean isMatchingJsonByFieldName(JsonNode refNode, JsonNode tarNode, String fieldName) {
+        if (refNode.has(fieldName) || tarNode.has(fieldName)) {
+            if (!isMatchingJsons(refNode.get(fieldName).toString(), tarNode.get(fieldName).toString())) {
+                return Boolean.FALSE;
+            }
+        }
+        return Boolean.TRUE;
     }
 
     /**
