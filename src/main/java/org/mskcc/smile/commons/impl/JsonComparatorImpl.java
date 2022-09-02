@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Strings;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -125,27 +127,52 @@ public class JsonComparatorImpl implements JsonComparator {
         while (itrTar.hasNext()) {
             JsonNode sampleNode = itrTar.next();
             String tarPrimaryId =  findPrimaryIdFromJsonNode(sampleNode);
-            if (primaryId.equals(tarPrimaryId)){
+            if (primaryId.equals(tarPrimaryId)) {
                 return sampleNode;
             }
         }
         return null;
     }
 
-    private Boolean isMatchingJsonByFieldName(JsonNode refNode, JsonNode tarNode, String fieldName) {
+    private Boolean isMatchingJsonByFieldName(JsonNode refNode, JsonNode tarNode,
+            String fieldName) throws JsonProcessingException {
         if (refNode.has(fieldName) || tarNode.has(fieldName)) {
-            if (!isMatchingJsons(refNode.get(fieldName).toString(), tarNode.get(fieldName).toString())) {
+            // filter the ref and target jsons first then run comparison
+            JsonNode unfilteredRefNode = convertToMapJsonNode(fieldName, refNode);
+            JsonNode unfilteredTarNode = convertToMapJsonNode(fieldName, tarNode);
+
+            JsonNode filteredRefNode = filterJsonNode(
+                    (ObjectNode) unfilteredRefNode, DEFAULT_IGNORED_FIELDS);
+            JsonNode filteredTarNode = filterJsonNode(
+                    (ObjectNode) unfilteredTarNode, DEFAULT_IGNORED_FIELDS);
+            if (!isMatchingJsons(mapper.writeValueAsString(filteredRefNode),
+                    mapper.writeValueAsString(filteredTarNode))) {
                 return Boolean.FALSE;
             }
         }
         return Boolean.TRUE;
     }
 
-    private String findPrimaryIdFromJsonNode(JsonNode sampleNode) {
-        return (sampleNode.get("primaryId") == null) ?
-                sampleNode.get("igoId").toString() : sampleNode.get("primaryId").toString();
+    /**
+     * Helper function to treat possible array node json comparisons as instances of regular JSONs.
+     * @param fieldName
+     * @param node
+     * @return JsonNode
+     * @throws JsonProcessingException
+     */
+    private JsonNode convertToMapJsonNode(String fieldName, JsonNode node) throws JsonProcessingException {
+        Map<String, String> map = new HashMap<>();
+        map.put(fieldName, node.get(fieldName).toString());
+        String convertedMapAsString = mapper.writeValueAsString(map);
+        return mapper.readTree(convertedMapAsString);
     }
-    
+
+
+    private String findPrimaryIdFromJsonNode(JsonNode sampleNode) {
+        return (sampleNode.get("primaryId") == null)
+                ? sampleNode.get("igoId").toString() : sampleNode.get("primaryId").toString();
+    }
+
     /**
      * Given an input jsonString and an array of ignoredFields, returns a JSON
      * with (1) the fields to ignore removed, (2) json fields with null or empty values
@@ -249,20 +276,26 @@ public class JsonComparatorImpl implements JsonComparator {
      * @param ignoredFields
      * @return JsonNode
      */
-    private JsonNode filterJsonNode(ObjectNode node, String[] ignoredFields) {
+    private JsonNode filterJsonNode(ObjectNode node, String[] ignoredFields) throws JsonProcessingException {
         List<String> fieldsToRemove = new ArrayList<>();
         // if ignored fields is not null then add to list of fields to remove
         if (ignoredFields != null) {
             fieldsToRemove.addAll(Arrays.asList(ignoredFields));
         }
 
+        JsonNode modifiedLibrariesNode = null; // this is for special case handling
         // append list of fields to remove from node that contain null or empty values
         Iterator<String> itr = node.fieldNames();
         while (itr.hasNext()) {
             String field = itr.next();
             String value = node.get(field).asText();
-            if (Strings.isNullOrEmpty(value) || value.equalsIgnoreCase("null")) {
+
+            if (Strings.isNullOrEmpty(value) || value.equalsIgnoreCase("null")
+                    || value.equalsIgnoreCase("[]")) {
                 fieldsToRemove.add(field);
+            } else if (field.equals("libraries")) {
+                // special handling for libraries
+                modifiedLibrariesNode = filterArrayNodeChildren(value);
             }
         }
 
@@ -274,8 +307,34 @@ public class JsonComparatorImpl implements JsonComparator {
             }
         }
 
+        // update the modified libraries node if not null
+        if (modifiedLibrariesNode != null) {
+            node.remove("libraries");
+            node.put("libraries", modifiedLibrariesNode);
+        }
         return node;
     }
+
+    /**
+     * Given a parent node as a string, returns a filtered JsonNode.
+     * This is special case handling specific to 'libraries' and other
+     * child properties of samples that are actually array nodes
+     * @param parentNode
+     * @return JsonNode
+     * @throws JsonProcessingException
+     */
+    private JsonNode filterArrayNodeChildren(String parentNode) throws JsonProcessingException {
+        List<Object> filteredParentNode = new ArrayList<>();
+        List<Object> childrenObjects = mapper.readValue(parentNode, List.class);
+        for (Object childObj : childrenObjects) {
+            String childObjString = mapper.writeValueAsString(childObj);
+            JsonNode filteredChildNode = filterJsonNode((ObjectNode)
+                    mapper.readTree(childObjString), DEFAULT_IGNORED_FIELDS);
+            filteredParentNode.add(filteredChildNode);
+        }
+        return mapper.readTree(mapper.writeValueAsString(filteredParentNode));
+    }
+
 
     /**
      * Returns a JsonNode with standardized properties based on the provided jsonPropsMap.
