@@ -100,9 +100,9 @@ public class JsonComparatorImpl implements JsonComparator {
             // Iterating through a list of samples from referenceJson
             while (itrRef.hasNext()) {
                 JsonNode refSampleNode = itrRef.next();
-                if (refSampleNode.has("primaryId")) {
-                    JsonNode tarSampleNode = findSampleNodeFromSampleArray(targetJson,
-                            refSampleNode.get("primaryId").toString());
+                String primaryId = findPrimaryIdFromJsonNode(refSampleNode);
+                if (primaryId != null) {
+                    JsonNode tarSampleNode = findSampleNodeFromSampleArray(targetJson, primaryId);
                     // Compares libraries, runs and qcReports.
                     if (!isMatchingJsonByFieldName(refSampleNode, tarSampleNode, "qcReports")
                             || !isMatchingJsonByFieldName(refSampleNode, tarSampleNode, "libraries")
@@ -124,7 +124,8 @@ public class JsonComparatorImpl implements JsonComparator {
 
         while (itrTar.hasNext()) {
             JsonNode sampleNode = itrTar.next();
-            if (primaryId.equals(sampleNode.get("primaryId").toString())) {
+            String tarPrimaryId =  findPrimaryIdFromJsonNode(sampleNode);
+            if (primaryId.equals(tarPrimaryId)){
                 return sampleNode;
             }
         }
@@ -140,6 +141,11 @@ public class JsonComparatorImpl implements JsonComparator {
         return Boolean.TRUE;
     }
 
+    private String findPrimaryIdFromJsonNode(JsonNode sampleNode) {
+        return (sampleNode.get("primaryId") == null) ?
+                sampleNode.get("igoId").toString() : sampleNode.get("primaryId").toString();
+    }
+    
     /**
      * Given an input jsonString and an array of ignoredFields, returns a JSON
      * with (1) the fields to ignore removed, (2) json fields with null or empty values
